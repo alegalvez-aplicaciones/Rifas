@@ -132,6 +132,7 @@
           <p class="muted" id="dInfo">—</p>
         </div>
       </div>
+      <button class="block" id="shareBtn" style="margin-top:12px;background:#25D366">🔗 Compartir link con clientes</button>
       <div class="grid" id="tablero"></div>
       <div class="legend">
         <span><i class="dot" style="background:var(--ok)"></i>Disponible</span>
@@ -432,6 +433,32 @@ function renderHist(evs){
 
 $("backBtn").onclick = () => { if(unsubRifa)unsubRifa(); if(unsubHist)unsubHist();
   unsubRifa=unsubHist=null; irDash(currentUser); };
+
+// ---------- Compartir link con clientes ----------
+$("shareBtn").onclick = () => {
+  const url = new URL("cliente.html", location.href);
+  url.searchParams.set("rifa", rifaActualId);
+  const link = url.toString();
+  const texto = "¡Participá de la rifa! Elegí tu número acá 👇\n" + link;
+  const wa = "https://wa.me/?text=" + encodeURIComponent(texto);
+  modal(`<h3>Compartir rifa</h3>
+    <p class="muted">Mandá este link a tus clientes. Cuando alguien elija un número,
+      aparece al instante acá en tu tablero.</p>
+    <input id="shareUrl" readonly value="${escapeHtml(link)}" style="margin-top:6px">
+    <div class="actions">
+      <button id="copyBtn" onclick="_copiar()">📋 Copiar link</button>
+      <a href="${wa}" target="_blank" rel="noopener" style="text-decoration:none">
+        <button class="block" style="background:#25D366">💬 Enviar por WhatsApp</button></a>
+      <button class="ghost" onclick="_closeModal()">Cerrar</button>
+    </div>`);
+};
+window._copiar = async () => {
+  const i = $("shareUrl");
+  try { await navigator.clipboard.writeText(i.value); }
+  catch(e){ i.select(); document.execCommand("copy"); }
+  const b = $("copyBtn"); b.textContent = "✅ ¡Copiado!";
+  setTimeout(()=> b.textContent = "📋 Copiar link", 1800);
+};
 
 function escapeHtml(s){ return String(s??"").replace(/[&<>"']/g,
   m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }

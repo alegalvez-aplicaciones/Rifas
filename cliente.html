@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Elegí tu número</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
+    --txt:#e7eaf0; --muted:#9aa3b2; --accent:#4f8cff;
+    --ok:#2fbf71; --busy:#e0554e; --lock:#b98a2f; --radius:14px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;line-height:1.45}
+  .wrap{max-width:560px;margin:0 auto;padding:16px}
+  h1{font-size:22px;margin:0}
+  .muted{color:var(--muted);font-size:14px}
+  button{font:inherit;cursor:pointer;border:none;border-radius:10px;padding:12px 14px;
+    background:var(--accent);color:#fff;font-weight:600}
+  button:active{transform:translateY(1px)}
+  button.ghost{background:var(--panel2);color:var(--txt);border:1px solid var(--line)}
+  button.block{width:100%}
+  input{font:inherit;width:100%;padding:12px;border-radius:10px;
+    border:1px solid var(--line);background:var(--panel2);color:var(--txt);margin-top:6px}
+  label{font-size:13px;color:var(--muted)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:18px;margin-bottom:14px}
+  .hide{display:none!important}
+  .err{color:var(--busy);font-size:13px;margin-top:8px;min-height:16px}
+  .spinner{text-align:center;color:var(--muted);padding:40px}
+
+  .grid{display:grid;grid-template-columns:repeat(10,1fr);gap:5px;margin-top:14px}
+  .num{aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;
+    border-radius:8px;font-weight:700;font-size:13px;border:1px solid var(--line);
+    background:var(--panel2);color:var(--txt);user-select:none;position:relative}
+  .num.disponible{background:rgba(47,191,113,.12);border-color:rgba(47,191,113,.4);cursor:pointer}
+  .num.disponible:hover{background:rgba(47,191,113,.25)}
+  .num.ocupado,.num.bloqueado{opacity:.5;text-decoration:line-through;
+    background:rgba(224,85,78,.12);color:var(--busy);border-color:rgba(224,85,78,.3);cursor:not-allowed}
+  .legend{display:flex;gap:16px;font-size:12px;color:var(--muted);margin-top:14px}
+  .dot{width:10px;height:10px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:middle}
+
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;
+    align-items:center;justify-content:center;padding:20px;z-index:50}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:16px;
+    padding:22px;width:100%;max-width:360px}
+  .modal h3{margin:0 0 6px;font-size:19px}
+  .modal .actions{display:flex;flex-direction:column;gap:8px;margin-top:16px}
+  .big-num{font-size:44px;font-weight:800;color:var(--accent);text-align:center;margin:6px 0}
+  .ok-check{font-size:52px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div id="loading" class="spinner">Cargando la rifa…</div>
+
+  <!-- Error: rifa no encontrada -->
+  <div id="noRifa" class="hide">
+    <div class="card" style="text-align:center">
+      <div style="font-size:40px">🔍</div>
+      <h1>Rifa no encontrada</h1>
+      <p class="muted">El link no es válido o la rifa ya no está disponible.
+        Pedile el link correcto a quien te lo compartió.</p>
+    </div>
+  </div>
+
+  <!-- Tablero del cliente -->
+  <div id="app" class="hide">
+    <div class="card">
+      <h1 id="titulo">—</h1>
+      <p class="muted" id="info">Elegí un número disponible para participar.</p>
+      <div class="grid" id="tablero"></div>
+      <div class="legend">
+        <span><i class="dot" style="background:var(--ok)"></i>Disponible</span>
+        <span><i class="dot" style="background:var(--busy)"></i>Ocupado</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div id="modal" class="modal-bg hide"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+import { getFirestore, doc, onSnapshot, runTransaction, collection, addDoc, serverTimestamp }
+  from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCQlszYa6ooHXBgiJTn2rirxdeT7nufmIE",
+  authDomain: "rifas-17ba2.firebaseapp.com",
+  projectId: "rifas-17ba2",
+  storageBucket: "rifas-17ba2.firebasestorage.app",
+  messagingSenderId: "13223898586",
+  appId: "1:13223898586:web:505fd9c6e11dd4d8f2e4e3"
+};
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+const $ = id => document.getElementById(id);
+function show(v){ ["loading","noRifa","app"].forEach(x=> $(x).classList.toggle("hide", x!==v)); }
+
+function modal(html){
+  const m=$("modal"); m.innerHTML=`<div class="modal">${html}</div>`;
+  m.classList.remove("hide"); m.onclick=e=>{ if(e.target===m) closeModal(); };
+}
+function closeModal(){ $("modal").classList.add("hide"); $("modal").innerHTML=""; }
+window._closeModal = closeModal;
+function escapeHtml(s){ return String(s??"").replace(/[&<>"']/g,
+  m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+// Leer el ID de la rifa desde el link (?rifa=XXXX)
+const rifaId = new URLSearchParams(location.search).get("rifa");
+if(!rifaId){ show("noRifa"); }
+else {
+  const ref = doc(db,"rifas",rifaId);
+  onSnapshot(ref, snap=>{
+    if(!snap.exists()){ show("noRifa"); return; }
+    const r = snap.data();
+    $("titulo").textContent = r.titulo || "Rifa";
+    const nums = r.numeros||{};
+    const libres = Object.values(nums).filter(n=>n.estado==="disponible").length;
+    $("info").textContent = r.precio
+      ? `$${r.precio} por número · ${libres} disponibles`
+      : `${libres} números disponibles`;
+    renderTablero(nums);
+    show("app");
+  }, err=>{ show("noRifa"); });
+}
+
+function renderTablero(nums){
+  let html="";
+  for(let i=0;i<100;i++){
+    const k=String(i).padStart(2,"0");
+    const est=(nums[k]||{}).estado||"disponible";
+    html += `<div class="num ${est}" data-n="${k}" data-e="${est}">${k}</div>`;
+  }
+  const t=$("tablero"); t.innerHTML=html;
+  t.querySelectorAll(".num").forEach(el=>{
+    if(el.dataset.e==="disponible") el.onclick=()=> pedirDatos(el.dataset.n);
+  });
+}
+
+function pedirDatos(k){
+  modal(`<h3>Número ${k}</h3>
+    <p class="muted">Completá tus datos para reservarlo.</p>
+    <label>Nombre</label>
+    <input id="cNombre" placeholder="Tu nombre" autofocus>
+    <label style="margin-top:10px;display:block">Apellido</label>
+    <input id="cApellido" placeholder="Tu apellido">
+    <div class="err" id="cErr"></div>
+    <div class="actions">
+      <button id="confBtn" onclick="_reservar('${k}')">Reservar número ${k}</button>
+      <button class="ghost" onclick="_closeModal()">Cancelar</button>
+    </div>`);
+}
+
+window._reservar = async (k) => {
+  const nombre = ($("cNombre").value||"").trim();
+  const apellido = ($("cApellido").value||"").trim();
+  if(!nombre || !apellido){ $("cErr").textContent="Completá nombre y apellido."; return; }
+  const nombreCompleto = nombre+" "+apellido;
+  $("confBtn").disabled = true;
+  $("confBtn").textContent = "Reservando…";
+  const ref = doc(db,"rifas",rifaId);
+  try {
+    await runTransaction(db, async (tx)=>{
+      const snap = await tx.get(ref);
+      if(!snap.exists()) throw new Error("no-existe");
+      const estado = (snap.data().numeros?.[k]||{}).estado;
+      if(estado!=="disponible") throw new Error("ocupado");
+      tx.update(ref, {
+        [`numeros.${k}.estado`]:"ocupado",
+        [`numeros.${k}.nombre`]:nombreCompleto,
+        [`numeros.${k}.at`]:serverTimestamp()
+      });
+    });
+    // registrar en historial (fuera de la transacción)
+    addDoc(collection(db,"rifas",rifaId,"historial"),
+      { tipo:"ocupado", numero:k, nombre:nombreCompleto, at:serverTimestamp() });
+    exito(k, nombre);
+  } catch(e){
+    if(e.message==="ocupado"){
+      modal(`<h3>Ups 😕</h3>
+        <p class="muted">Justo alguien tomó el número <strong>${k}</strong> antes que vos.
+        Elegí otro, hay más disponibles.</p>
+        <div class="actions"><button onclick="_closeModal()">Elegir otro</button></div>`);
+    } else {
+      $("cErr").textContent = "No se pudo reservar. Probá de nuevo.";
+      $("confBtn").disabled=false; $("confBtn").textContent="Reservar número "+k;
+    }
+  }
+};
+
+function exito(k, nombre){
+  modal(`<div class="ok-check">✅</div>
+    <h3 style="text-align:center">¡Listo, ${escapeHtml(nombre)}!</h3>
+    <div class="big-num">${k}</div>
+    <p class="muted" style="text-align:center">Tu número quedó reservado.
+      Guardá el comprobante y coordiná el pago con el organizador.</p>
+    <div class="actions"><button onclick="_closeModal()">Elegir otro número</button></div>`);
+}
+</script>
+</body>
+</html>
