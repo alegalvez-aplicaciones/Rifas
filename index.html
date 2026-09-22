@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rifas — Panel del vendedor</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
+    --txt:#e7eaf0; --muted:#9aa3b2; --accent:#4f8cff; --accent2:#3a6fd6;
+    --ok:#2fbf71; --busy:#e0554e; --lock:#b98a2f;
+    --radius:14px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;line-height:1.45}
+  .wrap{max-width:560px;margin:0 auto;padding:16px}
+  h1{font-size:20px;margin:0}
+  h2{font-size:17px;margin:0 0 4px}
+  .muted{color:var(--muted);font-size:13px}
+  button{font:inherit;cursor:pointer;border:none;border-radius:10px;padding:11px 14px;
+    background:var(--accent);color:#fff;font-weight:600}
+  button:active{transform:translateY(1px)}
+  button.ghost{background:var(--panel2);color:var(--txt);border:1px solid var(--line)}
+  button.danger{background:var(--busy)}
+  button.warn{background:var(--lock)}
+  button.block{width:100%}
+  input{font:inherit;width:100%;padding:11px 12px;border-radius:10px;
+    border:1px solid var(--line);background:var(--panel2);color:var(--txt);margin-top:6px}
+  label{font-size:13px;color:var(--muted)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:16px;margin-bottom:14px}
+  .row{display:flex;gap:10px;align-items:center}
+  .row.between{justify-content:space-between}
+  .hide{display:none!important}
+  .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+  .err{color:var(--busy);font-size:13px;margin-top:8px;min-height:16px}
+
+  /* Lista de rifas */
+  .rifa-item{display:flex;justify-content:space-between;align-items:center;
+    padding:14px;border:1px solid var(--line);border-radius:12px;margin-top:10px;
+    background:var(--panel2)}
+  .rifa-item .meta{font-size:12px;color:var(--muted)}
+  .rifa-item button{padding:8px 12px;font-size:14px}
+
+  /* Tablero */
+  .grid{display:grid;grid-template-columns:repeat(10,1fr);gap:5px;margin-top:12px}
+  .num{aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;
+    border-radius:8px;font-weight:700;font-size:13px;border:1px solid var(--line);
+    background:var(--panel2);color:var(--txt);cursor:pointer;user-select:none;position:relative}
+  .num.ocupado{background:rgba(224,85,78,.15);color:var(--busy);
+    text-decoration:line-through;border-color:rgba(224,85,78,.4)}
+  .num.bloqueado{background:rgba(185,138,47,.15);color:var(--lock);
+    border-color:rgba(185,138,47,.4)}
+  .num.disponible{background:rgba(47,191,113,.10);border-color:rgba(47,191,113,.35)}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:12px}
+  .dot{width:10px;height:10px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:middle}
+
+  /* Historial */
+  .hist{max-height:260px;overflow:auto;margin-top:8px}
+  .hev{display:flex;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
+  .hev .t{font-size:11px;color:var(--muted);white-space:nowrap}
+  .badge{font-size:11px;padding:2px 7px;border-radius:6px;font-weight:600;white-space:nowrap}
+  .b-ocupado{background:rgba(224,85,78,.18);color:var(--busy)}
+  .b-bloqueado,.b-desbloqueado{background:rgba(185,138,47,.18);color:var(--lock)}
+  .b-liberado{background:rgba(47,191,113,.18);color:var(--ok)}
+  .b-creo{background:rgba(79,140,255,.18);color:var(--accent)}
+
+  /* Modal */
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;
+    align-items:center;justify-content:center;padding:20px;z-index:50}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:16px;
+    padding:20px;width:100%;max-width:340px}
+  .modal h3{margin:0 0 4px;font-size:18px}
+  .modal .actions{display:flex;flex-direction:column;gap:8px;margin-top:16px}
+  .spinner{text-align:center;color:var(--muted);padding:30px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ===== CARGANDO ===== -->
+  <div id="loading" class="spinner">Cargando…</div>
+
+  <!-- ===== LOGIN / REGISTRO ===== -->
+  <div id="auth" class="hide">
+    <div class="topbar"><h1>🎟️ Rifas</h1></div>
+    <div class="card">
+      <h2 id="authTitle">Iniciar sesión</h2>
+      <p class="muted" id="authSub">Entrá con tu email y contraseña para manejar tus rifas.</p>
+      <label>Email</label>
+      <input id="email" type="email" autocomplete="email" placeholder="tucorreo@ejemplo.com">
+      <label style="margin-top:10px;display:block">Contraseña</label>
+      <input id="pass" type="password" autocomplete="current-password" placeholder="mínimo 6 caracteres">
+      <div class="err" id="authErr"></div>
+      <button class="block" id="authBtn" style="margin-top:6px">Entrar</button>
+      <p class="muted" style="text-align:center;margin:14px 0 0">
+        <span id="switchTxt">¿No tenés cuenta?</span>
+        <a href="#" id="switchLink" style="color:var(--accent)">Registrate</a>
+      </p>
+    </div>
+  </div>
+
+  <!-- ===== LISTA DE RIFAS ===== -->
+  <div id="dash" class="hide">
+    <div class="topbar">
+      <h1>🎟️ Mis rifas</h1>
+      <button class="ghost" id="logoutBtn">Salir</button>
+    </div>
+    <div class="card">
+      <h2>Nueva rifa</h2>
+      <label>Nombre de la rifa</label>
+      <input id="nrTitulo" placeholder="Ej: Rifa del asado">
+      <label style="margin-top:10px;display:block">Precio por número (opcional)</label>
+      <input id="nrPrecio" type="number" inputmode="numeric" placeholder="Ej: 2000">
+      <div class="err" id="nrErr"></div>
+      <button class="block" id="crearBtn" style="margin-top:6px">Crear rifa</button>
+    </div>
+    <div id="rifasList"></div>
+  </div>
+
+  <!-- ===== DETALLE DE RIFA ===== -->
+  <div id="detalle" class="hide">
+    <div class="topbar">
+      <button class="ghost" id="backBtn">← Volver</button>
+      <button class="ghost" id="logoutBtn2">Salir</button>
+    </div>
+    <div class="card">
+      <div class="row between">
+        <div>
+          <h2 id="dTitulo">—</h2>
+          <p class="muted" id="dInfo">—</p>
+        </div>
+      </div>
+      <div class="grid" id="tablero"></div>
+      <div class="legend">
+        <span><i class="dot" style="background:var(--ok)"></i>Disponible</span>
+        <span><i class="dot" style="background:var(--busy)"></i>Ocupado</span>
+        <span><i class="dot" style="background:var(--lock)"></i>Bloqueado</span>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Historial</h2>
+      <p class="muted">Cada movimiento queda registrado acá.</p>
+      <div class="hist" id="histList"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===== MODAL ===== -->
+<div id="modal" class="modal-bg hide"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
+  signOut, onAuthStateChanged, setPersistence, browserLocalPersistence, inMemoryPersistence }
+  from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+import { getFirestore, collection, doc, setDoc, addDoc, updateDoc,
+  onSnapshot, query, where, serverTimestamp }
+  from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
+// ---- Configuración de tu proyecto Firebase ----
+const firebaseConfig = {
+  apiKey: "AIzaSyCQlszYa6ooHXBgiJTn2rirxdeT7nufmIE",
+  authDomain: "rifas-17ba2.firebaseapp.com",
+  projectId: "rifas-17ba2",
+  storageBucket: "rifas-17ba2.firebasestorage.app",
+  messagingSenderId: "13223898586",
+  appId: "1:13223898586:web:505fd9c6e11dd4d8f2e4e3"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+// Persistencia: guarda la sesión; si el entorno no lo permite, usa memoria.
+try { await setPersistence(auth, browserLocalPersistence); }
+catch(e){ try { await setPersistence(auth, inMemoryPersistence); } catch(_){} }
+
+// ---------- Helpers de vistas ----------
+const $ = id => document.getElementById(id);
+const views = ["loading","auth","dash","detalle"];
+function show(v){ views.forEach(x=> $(x).classList.toggle("hide", x!==v)); }
+
+// ---------- Modal ----------
+function modal(html){
+  const m = $("modal");
+  m.innerHTML = `<div class="modal">${html}</div>`;
+  m.classList.remove("hide");
+  m.onclick = e => { if(e.target===m) closeModal(); };
+}
+function closeModal(){ $("modal").classList.add("hide"); $("modal").innerHTML=""; }
+window._closeModal = closeModal;
+
+// ---------- AUTH: alternar login/registro ----------
+let modoRegistro = false;
+$("switchLink").onclick = e => {
+  e.preventDefault();
+  modoRegistro = !modoRegistro;
+  $("authTitle").textContent = modoRegistro ? "Crear cuenta" : "Iniciar sesión";
+  $("authSub").textContent = modoRegistro
+    ? "Registrate para empezar a crear tus rifas."
+    : "Entrá con tu email y contraseña para manejar tus rifas.";
+  $("authBtn").textContent = modoRegistro ? "Registrarme" : "Entrar";
+  $("switchTxt").textContent = modoRegistro ? "¿Ya tenés cuenta?" : "¿No tenés cuenta?";
+  $("switchLink").textContent = modoRegistro ? "Iniciá sesión" : "Registrate";
+  $("authErr").textContent = "";
+};
+
+const errMsg = code => ({
+  "auth/invalid-email":"El email no es válido.",
+  "auth/missing-password":"Escribí una contraseña.",
+  "auth/weak-password":"La contraseña debe tener al menos 6 caracteres.",
+  "auth/email-already-in-use":"Ya existe una cuenta con ese email. Iniciá sesión.",
+  "auth/invalid-credential":"Email o contraseña incorrectos.",
+  "auth/user-not-found":"No hay una cuenta con ese email.",
+  "auth/wrong-password":"Contraseña incorrecta.",
+  "auth/network-request-failed":"Sin conexión. Revisá internet."
+}[code] || "Ocurrió un error. Probá de nuevo.");
+
+$("authBtn").onclick = async () => {
+  const email = $("email").value.trim();
+  const pass = $("pass").value;
+  $("authErr").textContent = "";
+  $("authBtn").disabled = true;
+  try {
+    if(modoRegistro) await createUserWithEmailAndPassword(auth, email, pass);
+    else await signInWithEmailAndPassword(auth, email, pass);
+  } catch(e){ $("authErr").textContent = errMsg(e.code); }
+  $("authBtn").disabled = false;
+};
+
+$("logoutBtn").onclick = $("logoutBtn2").onclick = () => signOut(auth);
+
+// ---------- Estado de sesión ----------
+let unsubRifas = null, unsubRifa = null, unsubHist = null;
+function limpiarSubs(){ [unsubRifas,unsubRifa,unsubHist].forEach(u=>u&&u());
+  unsubRifas=unsubRifa=unsubHist=null; }
+
+onAuthStateChanged(auth, user => {
+  limpiarSubs();
+  if(user){ $("email").value=""; $("pass").value=""; irDash(user); }
+  else show("auth");
+});
+
+// ---------- DASHBOARD: crear y listar rifas ----------
+let currentUser = null;
+
+function irDash(user){
+  currentUser = user;
+  show("dash");
+  const q = query(collection(db,"rifas"), where("owner","==",user.uid));
+  unsubRifas = onSnapshot(q, snap => {
+    const rifas = [];
+    snap.forEach(d => rifas.push({id:d.id, ...d.data()}));
+    rifas.sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+    renderRifas(rifas);
+  });
+}
+
+function renderRifas(rifas){
+  const c = $("rifasList");
+  if(!rifas.length){ c.innerHTML =
+    `<p class="muted" style="text-align:center;margin-top:8px">Todavía no creaste ninguna rifa.</p>`;
+    return; }
+  c.innerHTML = rifas.map(r=>{
+    const nums = r.numeros||{};
+    const ocupados = Object.values(nums).filter(n=>n.estado==="ocupado").length;
+    const bloq = Object.values(nums).filter(n=>n.estado==="bloqueado").length;
+    const libres = 100 - ocupados - bloq;
+    return `<div class="rifa-item">
+      <div>
+        <strong>${escapeHtml(r.titulo)}</strong>
+        <div class="meta">${libres} libres · ${ocupados} vendidos · ${bloq} bloqueados</div>
+      </div>
+      <button data-id="${r.id}">Abrir</button>
+    </div>`;
+  }).join("");
+  c.querySelectorAll("button[data-id]").forEach(b=>
+    b.onclick = ()=> abrirRifa(b.dataset.id));
+}
+
+$("crearBtn").onclick = async () => {
+  const titulo = $("nrTitulo").value.trim();
+  const precio = parseFloat($("nrPrecio").value) || null;
+  $("nrErr").textContent = "";
+  if(!titulo){ $("nrErr").textContent = "Ponele un nombre a la rifa."; return; }
+  $("crearBtn").disabled = true;
+  try {
+    const numeros = {};
+    for(let i=0;i<100;i++){
+      numeros[String(i).padStart(2,"0")] = { estado:"disponible", nombre:null, at:null };
+    }
+    const ref = doc(collection(db,"rifas"));
+    await setDoc(ref, {
+      owner: currentUser.uid, titulo, precio,
+      createdAt: serverTimestamp(), numeros
+    });
+    await addDoc(collection(db,"rifas",ref.id,"historial"),
+      { tipo:"creo", numero:null, nombre:null, at:serverTimestamp() });
+    $("nrTitulo").value=""; $("nrPrecio").value="";
+  } catch(e){ $("nrErr").textContent = "No se pudo crear. ¿Está creada la base Firestore?"; }
+  $("crearBtn").disabled = false;
+};
+
+// ---------- DETALLE: tablero + historial ----------
+let rifaActualId = null, rifaActualData = null;
+
+function abrirRifa(id){
+  rifaActualId = id;
+  show("detalle");
+  $("tablero").innerHTML = `<p class="muted">Cargando tablero…</p>`;
+  if(unsubRifa) unsubRifa();
+  unsubRifa = onSnapshot(doc(db,"rifas",id), d=>{
+    if(!d.exists()) return;
+    rifaActualData = d.data();
+    $("dTitulo").textContent = rifaActualData.titulo;
+    const nums = rifaActualData.numeros||{};
+    const ocupados = Object.values(nums).filter(n=>n.estado==="ocupado").length;
+    $("dInfo").textContent =
+      `${ocupados}/100 vendidos` + (rifaActualData.precio? ` · $${rifaActualData.precio} c/u`:"");
+    renderTablero(nums);
+  });
+  if(unsubHist) unsubHist();
+  const hq = query(collection(db,"rifas",id,"historial"));
+  unsubHist = onSnapshot(hq, snap=>{
+    const evs = [];
+    snap.forEach(d=>evs.push(d.data()));
+    evs.sort((a,b)=>(b.at?.seconds||1e15)-(a.at?.seconds||1e15));
+    renderHist(evs.slice(0,50));
+  });
+}
+
+function renderTablero(nums){
+  const t = $("tablero");
+  let html = "";
+  for(let i=0;i<100;i++){
+    const k = String(i).padStart(2,"0");
+    const n = nums[k]||{estado:"disponible"};
+    html += `<div class="num ${n.estado}" data-n="${k}">${k}</div>`;
+  }
+  t.innerHTML = html;
+  t.querySelectorAll(".num").forEach(el=>
+    el.onclick = ()=> menuNumero(el.dataset.n, nums[el.dataset.n]||{estado:"disponible"}));
+}
+
+function menuNumero(k, n){
+  let body = `<h3>Número ${k}</h3>`;
+  if(n.estado==="disponible"){
+    body += `<p class="muted">Está disponible.</p><div class="actions">
+      <button onclick="_ocupar('${k}')">Marcar como vendido</button>
+      <button class="warn" onclick="_setEstado('${k}','bloqueado')">Bloquear</button>
+      <button class="ghost" onclick="_closeModal()">Cancelar</button></div>`;
+  } else if(n.estado==="ocupado"){
+    body += `<p class="muted">Vendido a: <strong>${escapeHtml(n.nombre||"—")}</strong></p>
+      <div class="actions">
+      <button class="danger" onclick="_liberar('${k}')">Liberar (marcar disponible)</button>
+      <button class="ghost" onclick="_closeModal()">Cancelar</button></div>`;
+  } else {
+    body += `<p class="muted">Está bloqueado.</p><div class="actions">
+      <button onclick="_setEstado('${k}','disponible')">Desbloquear</button>
+      <button class="ghost" onclick="_closeModal()">Cancelar</button></div>`;
+  }
+  modal(body);
+}
+
+async function evento(tipo, numero, nombre){
+  await addDoc(collection(db,"rifas",rifaActualId,"historial"),
+    { tipo, numero, nombre:nombre||null, at:serverTimestamp() });
+}
+
+window._setEstado = async (k, estado) => {
+  await updateDoc(doc(db,"rifas",rifaActualId), {
+    [`numeros.${k}.estado`]: estado,
+    [`numeros.${k}.nombre`]: null,
+    [`numeros.${k}.at`]: estado==="disponible"? null : serverTimestamp()
+  });
+  await evento(estado==="bloqueado"?"bloqueado":"desbloqueado", k);
+  closeModal();
+};
+
+window._liberar = async (k) => {
+  await updateDoc(doc(db,"rifas",rifaActualId), {
+    [`numeros.${k}.estado`]:"disponible",
+    [`numeros.${k}.nombre`]:null, [`numeros.${k}.at`]:null
+  });
+  await evento("liberado", k);
+  closeModal();
+};
+
+window._ocupar = (k) => {
+  modal(`<h3>Vender número ${k}</h3>
+    <label>Nombre y apellido del comprador</label>
+    <input id="mNombre" placeholder="Ej: Juan Pérez" autofocus>
+    <div class="err" id="mErr"></div>
+    <div class="actions">
+      <button onclick="_confirmarOcupar('${k}')">Confirmar venta</button>
+      <button class="ghost" onclick="_closeModal()">Cancelar</button>
+    </div>`);
+};
+
+window._confirmarOcupar = async (k) => {
+  const nombre = $("mNombre").value.trim();
+  if(!nombre){ $("mErr").textContent = "Escribí el nombre."; return; }
+  await updateDoc(doc(db,"rifas",rifaActualId), {
+    [`numeros.${k}.estado`]:"ocupado",
+    [`numeros.${k}.nombre`]:nombre, [`numeros.${k}.at`]:serverTimestamp()
+  });
+  await evento("ocupado", k, nombre);
+  closeModal();
+};
+
+function renderHist(evs){
+  const c = $("histList");
+  if(!evs.length){ c.innerHTML = `<p class="muted">Sin movimientos todavía.</p>`; return; }
+  const txt = { creo:"Rifa creada", ocupado:"Vendido", bloqueado:"Bloqueado",
+    desbloqueado:"Desbloqueado", liberado:"Liberado" };
+  const bcls = { creo:"b-creo", ocupado:"b-ocupado", bloqueado:"b-bloqueado",
+    desbloqueado:"b-desbloqueado", liberado:"b-liberado" };
+  c.innerHTML = evs.map(e=>{
+    const fecha = e.at?.seconds ? new Date(e.at.seconds*1000)
+      .toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}) : "…";
+    const num = e.numero ? `N° ${e.numero}` : "";
+    const quien = e.nombre ? ` — ${escapeHtml(e.nombre)}` : "";
+    return `<div class="hev">
+      <span class="badge ${bcls[e.tipo]||''}">${txt[e.tipo]||e.tipo}</span>
+      <span style="flex:1">${num}${quien}</span>
+      <span class="t">${fecha}</span></div>`;
+  }).join("");
+}
+
+$("backBtn").onclick = () => { if(unsubRifa)unsubRifa(); if(unsubHist)unsubHist();
+  unsubRifa=unsubHist=null; irDash(currentUser); };
+
+function escapeHtml(s){ return String(s??"").replace(/[&<>"']/g,
+  m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+</script>
+</body>
+</html>
