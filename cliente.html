@@ -30,7 +30,7 @@
   .err{color:var(--busy);font-size:13px;margin-top:8px;min-height:16px}
   .spinner{text-align:center;color:var(--muted);padding:40px}
 
-  .grid{display:grid;grid-template-columns:repeat(10,1fr);gap:5px;margin-top:14px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(34px,1fr));gap:5px;margin-top:14px}
   .num{aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;
     border-radius:8px;font-weight:700;font-size:13px;border:1px solid var(--line);
     background:var(--panel2);color:var(--txt);user-select:none;position:relative}
@@ -113,31 +113,41 @@ function escapeHtml(s){ return String(s??"").replace(/[&<>"']/g,
 
 // Leer el ID de la rifa desde el link (?rifa=XXXX)
 const rifaId = new URLSearchParams(location.search).get("rifa");
+let cantidadActual = 100, estadoActual = "activa";
+
 if(!rifaId){ show("noRifa"); }
 else {
   const ref = doc(db,"rifas",rifaId);
   onSnapshot(ref, snap=>{
     if(!snap.exists()){ show("noRifa"); return; }
     const r = snap.data();
+    cantidadActual = r.cantidad || Object.keys(r.numeros||{}).length || 100;
+    estadoActual = r.estado || "activa";
     $("titulo").textContent = r.titulo || "Rifa";
     const nums = r.numeros||{};
     const libres = Object.values(nums).filter(n=>n.estado==="disponible").length;
-    $("info").textContent = r.precio
-      ? `$${r.precio} por número · ${libres} disponibles`
-      : `${libres} números disponibles`;
+    if(estadoActual==="finalizada"){
+      $("info").innerHTML = '🔴 <strong>Esta rifa está cerrada.</strong> Ya no se pueden elegir números.';
+    } else {
+      $("info").textContent = r.precio
+        ? `$${r.precio} por número · ${libres} disponibles`
+        : `${libres} números disponibles`;
+    }
     renderTablero(nums);
     show("app");
   }, err=>{ show("noRifa"); });
 }
 
 function renderTablero(nums){
+  const ancho = String(Math.max(0,cantidadActual-1)).length;
   let html="";
-  for(let i=0;i<100;i++){
-    const k=String(i).padStart(2,"0");
+  for(let i=0;i<cantidadActual;i++){
+    const k=String(i).padStart(ancho,"0");
     const est=(nums[k]||{}).estado||"disponible";
     html += `<div class="num ${est}" data-n="${k}" data-e="${est}">${k}</div>`;
   }
   const t=$("tablero"); t.innerHTML=html;
+  if(estadoActual==="finalizada") return; // rifa cerrada: tablero de solo lectura
   t.querySelectorAll(".num").forEach(el=>{
     if(el.dataset.e==="disponible") el.onclick=()=> pedirDatos(el.dataset.n);
   });
@@ -169,6 +179,7 @@ window._reservar = async (k) => {
     await runTransaction(db, async (tx)=>{
       const snap = await tx.get(ref);
       if(!snap.exists()) throw new Error("no-existe");
+      if(snap.data().estado==="finalizada") throw new Error("cerrada");
       const estado = (snap.data().numeros?.[k]||{}).estado;
       if(estado!=="disponible") throw new Error("ocupado");
       tx.update(ref, {
@@ -187,6 +198,10 @@ window._reservar = async (k) => {
         <p class="muted">Justo alguien tomó el número <strong>${k}</strong> antes que vos.
         Elegí otro, hay más disponibles.</p>
         <div class="actions"><button onclick="_closeModal()">Elegir otro</button></div>`);
+    } else if(e.message==="cerrada"){
+      modal(`<h3>Rifa cerrada 🔴</h3>
+        <p class="muted">La rifa se cerró y ya no se pueden reservar números.</p>
+        <div class="actions"><button onclick="_closeModal()">Entendido</button></div>`);
     } else {
       $("cErr").textContent = "No se pudo reservar. Probá de nuevo.";
       $("confBtn").disabled=false; $("confBtn").textContent="Reservar número "+k;

@@ -44,7 +44,7 @@
   .rifa-item button{padding:8px 12px;font-size:14px}
 
   /* Tablero */
-  .grid{display:grid;grid-template-columns:repeat(10,1fr);gap:5px;margin-top:12px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(34px,1fr));gap:5px;margin-top:12px}
   .num{aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;
     border-radius:8px;font-weight:700;font-size:13px;border:1px solid var(--line);
     background:var(--panel2);color:var(--txt);cursor:pointer;user-select:none;position:relative}
@@ -111,6 +111,8 @@
       <h2>Nueva rifa</h2>
       <label>Nombre de la rifa</label>
       <input id="nrTitulo" placeholder="Ej: Rifa del asado">
+      <label style="margin-top:10px;display:block">¿Cuántos números? (entre 10 y 1000)</label>
+      <input id="nrCantidad" type="number" inputmode="numeric" min="10" max="1000" value="100" placeholder="Ej: 100">
       <label style="margin-top:10px;display:block">Precio por número (opcional)</label>
       <input id="nrPrecio" type="number" inputmode="numeric" placeholder="Ej: 2000">
       <div class="err" id="nrErr"></div>
@@ -145,6 +147,12 @@
       <p class="muted">Cada movimiento queda registrado acá.</p>
       <div class="hist" id="histList"></div>
     </div>
+    <div class="card">
+      <h2>Administrar</h2>
+      <p class="muted">Finalizar cierra la rifa para los clientes (podés reabrirla cuando quieras).</p>
+      <button class="block warn" id="finalizarBtn" style="margin:6px 0 8px">✅ Marcar como finalizada</button>
+      <button class="block danger" id="borrarBtn">🗑️ Borrar rifa</button>
+    </div>
   </div>
 
 </div>
@@ -157,7 +165,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/fireba
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
   signOut, onAuthStateChanged, setPersistence, browserLocalPersistence, inMemoryPersistence }
   from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
-import { getFirestore, collection, doc, setDoc, addDoc, updateDoc,
+import { getFirestore, collection, doc, setDoc, addDoc, updateDoc, deleteDoc, getDocs,
   onSnapshot, query, where, serverTimestamp }
   from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
@@ -267,13 +275,16 @@ function renderRifas(rifas){
     return; }
   c.innerHTML = rifas.map(r=>{
     const nums = r.numeros||{};
+    const total = r.cantidad || Object.keys(nums).length || 100;
     const ocupados = Object.values(nums).filter(n=>n.estado==="ocupado").length;
     const bloq = Object.values(nums).filter(n=>n.estado==="bloqueado").length;
-    const libres = 100 - ocupados - bloq;
+    const libres = total - ocupados - bloq;
+    const fin = r.estado==="finalizada"
+      ? `<span class="badge b-ocupado" style="margin-left:6px">Finalizada</span>` : "";
     return `<div class="rifa-item">
       <div>
-        <strong>${escapeHtml(r.titulo)}</strong>
-        <div class="meta">${libres} libres · ${ocupados} vendidos · ${bloq} bloqueados</div>
+        <strong>${escapeHtml(r.titulo)}</strong>${fin}
+        <div class="meta">${libres} libres · ${ocupados} vendidos · ${bloq} bloqueados · ${total} en total</div>
       </div>
       <button data-id="${r.id}">Abrir</button>
     </div>`;
@@ -284,26 +295,34 @@ function renderRifas(rifas){
 
 $("crearBtn").onclick = async () => {
   const titulo = $("nrTitulo").value.trim();
+  const cantidad = parseInt($("nrCantidad").value, 10);
   const precio = parseFloat($("nrPrecio").value) || null;
   $("nrErr").textContent = "";
   if(!titulo){ $("nrErr").textContent = "Ponele un nombre a la rifa."; return; }
+  if(!cantidad || cantidad<10 || cantidad>1000){
+    $("nrErr").textContent = "La cantidad de números debe estar entre 10 y 1000."; return; }
   $("crearBtn").disabled = true;
   try {
+    const ancho = anchoNum(cantidad);
     const numeros = {};
-    for(let i=0;i<100;i++){
-      numeros[String(i).padStart(2,"0")] = { estado:"disponible", nombre:null, at:null };
+    for(let i=0;i<cantidad;i++){
+      numeros[claveNum(i,ancho)] = { estado:"disponible", nombre:null, at:null };
     }
     const ref = doc(collection(db,"rifas"));
     await setDoc(ref, {
-      owner: currentUser.uid, titulo, precio,
+      owner: currentUser.uid, titulo, precio, cantidad, estado:"activa",
       createdAt: serverTimestamp(), numeros
     });
     await addDoc(collection(db,"rifas",ref.id,"historial"),
       { tipo:"creo", numero:null, nombre:null, at:serverTimestamp() });
-    $("nrTitulo").value=""; $("nrPrecio").value="";
+    $("nrTitulo").value=""; $("nrPrecio").value=""; $("nrCantidad").value="100";
   } catch(e){ $("nrErr").textContent = "No se pudo crear. ¿Está creada la base Firestore?"; }
   $("crearBtn").disabled = false;
 };
+
+// Ancho de dígitos y clave de cada número según la cantidad total
+function anchoNum(cant){ return String(Math.max(0,(cant||100)-1)).length; }
+function claveNum(i, ancho){ return String(i).padStart(ancho,"0"); }
 
 // ---------- DETALLE: tablero + historial ----------
 let rifaActualId = null, rifaActualData = null;
@@ -316,11 +335,14 @@ function abrirRifa(id){
   unsubRifa = onSnapshot(doc(db,"rifas",id), d=>{
     if(!d.exists()) return;
     rifaActualData = d.data();
+    const total = rifaActualData.cantidad || Object.keys(rifaActualData.numeros||{}).length || 100;
+    const fin = rifaActualData.estado==="finalizada";
     $("dTitulo").textContent = rifaActualData.titulo;
     const nums = rifaActualData.numeros||{};
     const ocupados = Object.values(nums).filter(n=>n.estado==="ocupado").length;
-    $("dInfo").textContent =
-      `${ocupados}/100 vendidos` + (rifaActualData.precio? ` · $${rifaActualData.precio} c/u`:"");
+    $("dInfo").innerHTML = (fin? `<span style="color:var(--busy);font-weight:700">🔴 FINALIZADA · </span>`:"") +
+      `${ocupados}/${total} vendidos` + (rifaActualData.precio? ` · $${rifaActualData.precio} c/u`:"");
+    $("finalizarBtn").textContent = fin ? "↩️ Reabrir rifa" : "✅ Marcar como finalizada";
     renderTablero(nums);
   });
   if(unsubHist) unsubHist();
@@ -335,9 +357,11 @@ function abrirRifa(id){
 
 function renderTablero(nums){
   const t = $("tablero");
+  const cant = rifaActualData?.cantidad || Object.keys(nums).length || 100;
+  const ancho = anchoNum(cant);
   let html = "";
-  for(let i=0;i<100;i++){
-    const k = String(i).padStart(2,"0");
+  for(let i=0;i<cant;i++){
+    const k = claveNum(i,ancho);
     const n = nums[k]||{estado:"disponible"};
     html += `<div class="num ${n.estado}" data-n="${k}">${k}</div>`;
   }
@@ -416,9 +440,11 @@ function renderHist(evs){
   const c = $("histList");
   if(!evs.length){ c.innerHTML = `<p class="muted">Sin movimientos todavía.</p>`; return; }
   const txt = { creo:"Rifa creada", ocupado:"Vendido", bloqueado:"Bloqueado",
-    desbloqueado:"Desbloqueado", liberado:"Liberado" };
+    desbloqueado:"Desbloqueado", liberado:"Liberado",
+    finalizada:"Finalizada", reabierta:"Reabierta" };
   const bcls = { creo:"b-creo", ocupado:"b-ocupado", bloqueado:"b-bloqueado",
-    desbloqueado:"b-desbloqueado", liberado:"b-liberado" };
+    desbloqueado:"b-desbloqueado", liberado:"b-liberado",
+    finalizada:"b-ocupado", reabierta:"b-liberado" };
   c.innerHTML = evs.map(e=>{
     const fecha = e.at?.seconds ? new Date(e.at.seconds*1000)
       .toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}) : "…";
@@ -433,6 +459,44 @@ function renderHist(evs){
 
 $("backBtn").onclick = () => { if(unsubRifa)unsubRifa(); if(unsubHist)unsubHist();
   unsubRifa=unsubHist=null; irDash(currentUser); };
+
+// ---------- Finalizar / Reabrir ----------
+$("finalizarBtn").onclick = async () => {
+  const fin = rifaActualData?.estado==="finalizada";
+  await updateDoc(doc(db,"rifas",rifaActualId), { estado: fin ? "activa" : "finalizada" });
+  await evento(fin ? "reabierta" : "finalizada", null);
+};
+
+// ---------- Borrar rifa (con confirmación fuerte) ----------
+$("borrarBtn").onclick = () => {
+  modal(`<h3 style="color:var(--busy)">⚠️ Borrar rifa</h3>
+    <p class="muted">Vas a borrar <strong>${escapeHtml(rifaActualData?.titulo||"")}</strong> para siempre:
+      todos los números, los compradores y el historial completo.
+      <strong style="color:var(--busy)">Esto no se puede deshacer.</strong></p>
+    <label>Para confirmar, escribí <strong>BORRAR</strong></label>
+    <input id="delConfirm" placeholder="BORRAR" autofocus>
+    <div class="err" id="delErr"></div>
+    <div class="actions">
+      <button class="danger" id="delBtn" onclick="_borrarRifa()">Borrar definitivamente</button>
+      <button class="ghost" onclick="_closeModal()">Cancelar</button>
+    </div>`);
+};
+window._borrarRifa = async () => {
+  if(($("delConfirm").value||"").trim().toUpperCase() !== "BORRAR"){
+    $("delErr").textContent = 'Escribí "BORRAR" en mayúsculas para confirmar.'; return; }
+  $("delBtn").disabled = true; $("delBtn").textContent = "Borrando…";
+  try {
+    const hs = await getDocs(collection(db,"rifas",rifaActualId,"historial"));
+    await Promise.all(hs.docs.map(d=> deleteDoc(d.ref)));
+    await deleteDoc(doc(db,"rifas",rifaActualId));
+    closeModal();
+    if(unsubRifa)unsubRifa(); if(unsubHist)unsubHist(); unsubRifa=unsubHist=null;
+    irDash(currentUser);
+  } catch(e){
+    $("delErr").textContent = "No se pudo borrar. Probá de nuevo.";
+    $("delBtn").disabled = false; $("delBtn").textContent = "Borrar definitivamente";
+  }
+};
 
 // ---------- Compartir link con clientes ----------
 $("shareBtn").onclick = () => {
