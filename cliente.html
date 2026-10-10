@@ -49,6 +49,8 @@
   .modal .actions{display:flex;flex-direction:column;gap:8px;margin-top:16px}
   .big-num{font-size:44px;font-weight:800;color:var(--accent);text-align:center;margin:6px 0}
   .ok-check{font-size:52px;text-align:center}
+  .banner{border-radius:12px;overflow:hidden;margin:-2px 0 14px;display:none}
+  .banner img{width:100%;display:block;max-height:220px;object-fit:cover}
 </style>
 </head>
 <body>
@@ -69,6 +71,7 @@
   <!-- Tablero del cliente -->
   <div id="app" class="hide">
     <div class="card">
+      <div class="banner" id="banner"><img id="bannerImg" alt="Imagen de la rifa"></div>
       <h1 id="titulo">—</h1>
       <p class="muted" id="info">Elegí un número disponible para participar.</p>
       <div class="grid" id="tablero"></div>
@@ -102,6 +105,24 @@ const db = getFirestore(app);
 const $ = id => document.getElementById(id);
 function show(v){ ["loading","noRifa","app"].forEach(x=> $(x).classList.toggle("hide", x!==v)); }
 
+// ---------- Temas de color ----------
+const TEMA_VARS = {
+  oscuro:    {"--bg":"#0f1115","--panel":"#171a21","--panel2":"#1e222b","--line":"#2a2f3a","--txt":"#e7eaf0","--muted":"#9aa3b2","--accent":"#4f8cff"},
+  oceano:    {"--bg":"#081626","--panel":"#102a3f","--panel2":"#163850","--line":"#1f4a66","--txt":"#eaf4ff","--muted":"#8fb2cc","--accent":"#2bb3e0"},
+  bosque:    {"--bg":"#0a1510","--panel":"#122a1c","--panel2":"#183726","--line":"#20492f","--txt":"#eafff2","--muted":"#8fc4a6","--accent":"#3fbf71"},
+  atardecer: {"--bg":"#1c0f17","--panel":"#2e1626","--panel2":"#3d1e33","--line":"#55294a","--txt":"#fff0ea","--muted":"#d1a39a","--accent":"#ff7a59"},
+  uva:       {"--bg":"#14102a","--panel":"#241a3a","--panel2":"#2f2350","--line":"#443168","--txt":"#f1eaff","--muted":"#b2a3d1","--accent":"#a06bff"},
+  claro:     {"--bg":"#f4f6fa","--panel":"#ffffff","--panel2":"#eef1f6","--line":"#d6dbe4","--txt":"#1a1f2b","--muted":"#67707f","--accent":"#2f6bff"}
+};
+function aplicarTema(nombre){
+  const vars = TEMA_VARS[nombre] || TEMA_VARS.oscuro;
+  for(const [k,v] of Object.entries(vars)) document.documentElement.style.setProperty(k,v);
+}
+function aplicarBanner(img){
+  $("banner").style.display = img ? "block" : "none";
+  if(img) $("bannerImg").src = img;
+}
+
 function modal(html){
   const m=$("modal"); m.innerHTML=`<div class="modal">${html}</div>`;
   m.classList.remove("hide"); m.onclick=e=>{ if(e.target===m) closeModal(); };
@@ -117,6 +138,13 @@ let cantidadActual = 100, estadoActual = "activa";
 
 if(!rifaId){ show("noRifa"); }
 else {
+  // Tema e imagen (opcional): se aplica apenas carga
+  onSnapshot(doc(db,"temas",rifaId), d=>{
+    const t = d.exists() ? d.data() : {};
+    aplicarTema(t.tema);
+    aplicarBanner(t.imagen);
+  }, ()=>{ aplicarTema(); });
+
   const ref = doc(db,"rifas",rifaId);
   onSnapshot(ref, snap=>{
     if(!snap.exists()){ show("noRifa"); return; }

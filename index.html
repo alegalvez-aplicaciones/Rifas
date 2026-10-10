@@ -66,6 +66,18 @@
   .b-liberado{background:rgba(47,191,113,.18);color:var(--ok)}
   .b-creo{background:rgba(79,140,255,.18);color:var(--accent)}
 
+  /* Apariencia: temas e imagen */
+  .swatches{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+  .swatch{border:2px solid var(--line);border-radius:10px;padding:8px 6px;cursor:pointer;
+    text-align:center;font-size:12px;font-weight:600}
+  .swatch.sel{border-color:#fff}
+  .swatch .sw-prev{height:26px;border-radius:6px;margin-bottom:6px}
+  .upload-label{display:block;width:100%;text-align:center;background:var(--panel2);
+    border:1px solid var(--line);border-radius:10px;padding:11px 14px;font-weight:600;
+    cursor:pointer;margin-top:12px}
+  .img-prev{margin-top:12px;border-radius:10px;overflow:hidden;border:1px solid var(--line);display:none}
+  .img-prev img{width:100%;display:block;max-height:180px;object-fit:cover}
+
   /* Modal */
   .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;
     align-items:center;justify-content:center;padding:20px;z-index:50}
@@ -148,6 +160,18 @@
       <div class="hist" id="histList"></div>
     </div>
     <div class="card">
+      <h2>Apariencia</h2>
+      <p class="muted">Elegí un tema de color y, si querés, subí una imagen (ej: foto del premio).
+        Así lo verán tus clientes en el link.</p>
+      <div class="swatches" id="temaSwatches"></div>
+      <div class="img-prev" id="imgPrev"><img id="imgPrevImg" alt="Imagen de la rifa"></div>
+      <label class="upload-label">📷 Subir imagen
+        <input id="imgInput" type="file" accept="image/*" hidden>
+      </label>
+      <button class="ghost block" id="removeImgBtn" style="margin-top:8px;display:none">Quitar imagen</button>
+      <div class="err" id="apErr"></div>
+    </div>
+    <div class="card">
       <h2>Administrar</h2>
       <p class="muted">Finalizar cierra la rifa para los clientes (podés reabrirla cuando quieras).</p>
       <button class="block warn" id="finalizarBtn" style="margin:6px 0 8px">✅ Marcar como finalizada</button>
@@ -186,6 +210,24 @@ const db = getFirestore(app);
 // Persistencia: guarda la sesión; si el entorno no lo permite, usa memoria.
 try { await setPersistence(auth, browserLocalPersistence); }
 catch(e){ try { await setPersistence(auth, inMemoryPersistence); } catch(_){} }
+
+// ---------- Temas de color ----------
+const TEMAS = {
+  oscuro:    { label:"Clásico",  c1:"#171a21", c2:"#4f8cff" },
+  oceano:    { label:"Océano",   c1:"#102a3f", c2:"#2bb3e0" },
+  bosque:    { label:"Bosque",   c1:"#122a1c", c2:"#3fbf71" },
+  atardecer: { label:"Atardecer",c1:"#2e1626", c2:"#ff7a59" },
+  uva:       { label:"Uva",      c1:"#241a3a", c2:"#a06bff" },
+  claro:     { label:"Claro",    c1:"#eef1f6", c2:"#2f6bff" }
+};
+const TEMA_VARS = {
+  oscuro:    {"--bg":"#0f1115","--panel":"#171a21","--panel2":"#1e222b","--line":"#2a2f3a","--txt":"#e7eaf0","--muted":"#9aa3b2","--accent":"#4f8cff"},
+  oceano:    {"--bg":"#081626","--panel":"#102a3f","--panel2":"#163850","--line":"#1f4a66","--txt":"#eaf4ff","--muted":"#8fb2cc","--accent":"#2bb3e0"},
+  bosque:    {"--bg":"#0a1510","--panel":"#122a1c","--panel2":"#183726","--line":"#20492f","--txt":"#eafff2","--muted":"#8fc4a6","--accent":"#3fbf71"},
+  atardecer: {"--bg":"#1c0f17","--panel":"#2e1626","--panel2":"#3d1e33","--line":"#55294a","--txt":"#fff0ea","--muted":"#d1a39a","--accent":"#ff7a59"},
+  uva:       {"--bg":"#14102a","--panel":"#241a3a","--panel2":"#2f2350","--line":"#443168","--txt":"#f1eaff","--muted":"#b2a3d1","--accent":"#a06bff"},
+  claro:     {"--bg":"#f4f6fa","--panel":"#ffffff","--panel2":"#eef1f6","--line":"#d6dbe4","--txt":"#1a1f2b","--muted":"#67707f","--accent":"#2f6bff"}
+};
 
 // ---------- Helpers de vistas ----------
 const $ = id => document.getElementById(id);
@@ -243,9 +285,9 @@ $("authBtn").onclick = async () => {
 $("logoutBtn").onclick = $("logoutBtn2").onclick = () => signOut(auth);
 
 // ---------- Estado de sesión ----------
-let unsubRifas = null, unsubRifa = null, unsubHist = null;
-function limpiarSubs(){ [unsubRifas,unsubRifa,unsubHist].forEach(u=>u&&u());
-  unsubRifas=unsubRifa=unsubHist=null; }
+let unsubRifas = null, unsubRifa = null, unsubHist = null, unsubTema = null;
+function limpiarSubs(){ [unsubRifas,unsubRifa,unsubHist,unsubTema].forEach(u=>u&&u());
+  unsubRifas=unsubRifa=unsubHist=unsubTema=null; }
 
 onAuthStateChanged(auth, user => {
   limpiarSubs();
@@ -353,7 +395,72 @@ function abrirRifa(id){
     evs.sort((a,b)=>(b.at?.seconds||1e15)-(a.at?.seconds||1e15));
     renderHist(evs.slice(0,50));
   });
+  // Apariencia (tema + imagen)
+  if(unsubTema) unsubTema();
+  unsubTema = onSnapshot(doc(db,"temas",id), d=>{
+    temaActual = d.exists() ? d.data() : {};
+    renderApariencia();
+  }, ()=>{ temaActual={}; renderApariencia(); });
 }
+
+// ---------- Apariencia: temas e imagen ----------
+let temaActual = {};
+
+function renderApariencia(){
+  const sel = temaActual.tema || "oscuro";
+  $("temaSwatches").innerHTML = Object.entries(TEMAS).map(([k,t])=>
+    `<div class="swatch ${k===sel?'sel':''}" data-tema="${k}">
+      <div class="sw-prev" style="background:linear-gradient(135deg,${t.c1},${t.c2})"></div>
+      ${t.label}
+    </div>`).join("");
+  $("temaSwatches").querySelectorAll(".swatch").forEach(el=>
+    el.onclick = ()=> guardarTema({ tema: el.dataset.tema }));
+  const img = temaActual.imagen;
+  $("imgPrev").style.display = img ? "block" : "none";
+  if(img) $("imgPrevImg").src = img;
+  $("removeImgBtn").style.display = img ? "block" : "none";
+}
+
+async function guardarTema(campos){
+  $("apErr").textContent = "";
+  try { await setDoc(doc(db,"temas",rifaActualId), campos, { merge:true }); }
+  catch(e){ $("apErr").textContent = "No se pudo guardar. Probá de nuevo."; }
+}
+
+// Achica la imagen antes de subirla para que pese poco
+function achicarImagen(file, maxW=1000, calidad=0.7){
+  return new Promise((res,rej)=>{
+    const img = new Image(); const url = URL.createObjectURL(file);
+    img.onload = ()=>{
+      const escala = Math.min(1, maxW/img.width);
+      const w = Math.round(img.width*escala), h = Math.round(img.height*escala);
+      const c = document.createElement("canvas"); c.width=w; c.height=h;
+      c.getContext("2d").drawImage(img,0,0,w,h);
+      URL.revokeObjectURL(url);
+      let q = calidad, data = c.toDataURL("image/jpeg", q);
+      while(data.length > 900000 && q > 0.3){ q -= 0.1; data = c.toDataURL("image/jpeg", q); }
+      res(data);
+    };
+    img.onerror = ()=>{ URL.revokeObjectURL(url); rej(new Error("img")); };
+    img.src = url;
+  });
+}
+
+$("imgInput").onchange = async (e)=>{
+  const file = e.target.files[0]; if(!file) return;
+  $("apErr").textContent = "Procesando imagen…";
+  try {
+    const data = await achicarImagen(file);
+    if(data.length > 950000){
+      $("apErr").textContent = "La imagen es muy pesada. Probá con una más chica."; return;
+    }
+    await guardarTema({ imagen: data });
+    $("apErr").textContent = "";
+  } catch(err){ $("apErr").textContent = "No se pudo procesar la imagen."; }
+  e.target.value = "";
+};
+
+$("removeImgBtn").onclick = ()=> guardarTema({ imagen: null });
 
 function renderTablero(nums){
   const t = $("tablero");
@@ -457,8 +564,8 @@ function renderHist(evs){
   }).join("");
 }
 
-$("backBtn").onclick = () => { if(unsubRifa)unsubRifa(); if(unsubHist)unsubHist();
-  unsubRifa=unsubHist=null; irDash(currentUser); };
+$("backBtn").onclick = () => { if(unsubRifa)unsubRifa(); if(unsubHist)unsubHist(); if(unsubTema)unsubTema();
+  unsubRifa=unsubHist=unsubTema=null; irDash(currentUser); };
 
 // ---------- Finalizar / Reabrir ----------
 $("finalizarBtn").onclick = async () => {
@@ -489,8 +596,10 @@ window._borrarRifa = async () => {
     const hs = await getDocs(collection(db,"rifas",rifaActualId,"historial"));
     await Promise.all(hs.docs.map(d=> deleteDoc(d.ref)));
     await deleteDoc(doc(db,"rifas",rifaActualId));
+    try { await deleteDoc(doc(db,"temas",rifaActualId)); } catch(_){}
     closeModal();
-    if(unsubRifa)unsubRifa(); if(unsubHist)unsubHist(); unsubRifa=unsubHist=null;
+    if(unsubRifa)unsubRifa(); if(unsubHist)unsubHist(); if(unsubTema)unsubTema();
+    unsubRifa=unsubHist=unsubTema=null;
     irDash(currentUser);
   } catch(e){
     $("delErr").textContent = "No se pudo borrar. Probá de nuevo.";
