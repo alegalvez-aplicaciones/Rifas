@@ -163,6 +163,7 @@
           <h2 id="dTitulo">—</h2>
           <p class="muted" id="dInfo">—</p>
         </div>
+        <button class="ghost" id="editarBtn" style="padding:8px 12px;white-space:nowrap">✏️ Editar</button>
       </div>
       <button class="block" id="shareBtn" style="margin-top:12px;background:#25D366">🔗 Compartir link con clientes</button>
       <div class="grid" id="tablero"></div>
@@ -664,6 +665,31 @@ function renderHist(evs){
 
 $("backBtn").onclick = () => { if(unsubRifa)unsubRifa(); if(unsubHist)unsubHist(); if(unsubTema)unsubTema();
   unsubRifa=unsubHist=unsubTema=null; irDash(currentUser); };
+
+// ---------- Editar nombre y precio ----------
+$("editarBtn").onclick = () => {
+  const t = rifaActualData?.titulo || "";
+  const p = rifaActualData?.precio ?? "";
+  modal(`<h3>Editar rifa</h3>
+    <label>Nombre de la rifa</label>
+    <input id="edTitulo" value="${escapeHtml(t)}" autofocus>
+    <label style="margin-top:10px;display:block">Precio por número (opcional)</label>
+    <input id="edPrecio" type="number" inputmode="numeric" value="${p===null?'':escapeHtml(String(p))}" placeholder="Ej: 2000">
+    <div class="err" id="edErr"></div>
+    <div class="actions">
+      <button onclick="_guardarEdicion()">Guardar cambios</button>
+      <button class="ghost" onclick="_closeModal()">Cancelar</button>
+    </div>`);
+};
+window._guardarEdicion = async () => {
+  const titulo = ($("edTitulo").value||"").trim();
+  const precio = parseFloat($("edPrecio").value) || null;
+  if(!titulo){ $("edErr").textContent = "Poné un nombre a la rifa."; return; }
+  try {
+    await updateDoc(doc(db,"rifas",rifaActualId), { titulo, precio });
+    closeModal();
+  } catch(e){ $("edErr").textContent = "No se pudo guardar. Probá de nuevo."; }
+};
 
 // ---------- Finalizar / Reabrir ----------
 $("finalizarBtn").onclick = async () => {
