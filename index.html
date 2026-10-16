@@ -693,8 +693,8 @@ window._borrarRifa = async () => {
   try {
     const hs = await getDocs(collection(db,"rifas",rifaActualId,"historial"));
     await Promise.all(hs.docs.map(d=> deleteDoc(d.ref)));
-    await deleteDoc(doc(db,"rifas",rifaActualId));
     try { await deleteDoc(doc(db,"temas",rifaActualId)); } catch(_){}
+    await deleteDoc(doc(db,"rifas",rifaActualId));
     closeModal();
     if(unsubRifa)unsubRifa(); if(unsubHist)unsubHist(); if(unsubTema)unsubTema();
     unsubRifa=unsubHist=unsubTema=null;
