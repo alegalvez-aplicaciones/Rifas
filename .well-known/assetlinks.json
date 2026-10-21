@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "io.github.alegalvez_aplicaciones.twa",
+        "sha256_cert_fingerprints": ["F4:6D:DB:6A:B6:AC:70:92:FE:57:07:40:3E:B6:E1:C2:CF:F6:A5:85:4A:9D:4A:44:D8:57:50:0E:E1:6D:8F:54"]
+      }
+    }]
