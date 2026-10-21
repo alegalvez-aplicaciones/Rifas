@@ -3,7 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Rifas — Panel del vendedor</title>
+<title>Mi Rifa — Panel del vendedor</title>
+<meta name="theme-color" content="#0f1115">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <style>
   :root{
     --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
@@ -114,7 +117,7 @@
 
   <!-- ===== LOGIN / REGISTRO ===== -->
   <div id="auth" class="hide">
-    <div class="topbar"><h1>🎟️ Rifas</h1></div>
+    <div class="topbar"><h1>🎟️ Mi Rifa</h1></div>
     <div class="card">
       <h2 id="authTitle">Iniciar sesión</h2>
       <p class="muted" id="authSub">Entrá con tu email y contraseña para manejar tus rifas.</p>
@@ -759,6 +762,14 @@ window._copiar = async () => {
 
 function escapeHtml(s){ return String(s??"").replace(/[&<>"']/g,
   m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+</script>
+<script>
+  // Registra el service worker (necesario para instalar como app / Play Store)
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("sw.js").catch(() => {});
+    });
+  }
 </script>
 </body>
 </html>
