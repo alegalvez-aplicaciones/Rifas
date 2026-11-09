@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Elegí tu número</title>
+<!-- Vista previa al compartir por WhatsApp / redes (Open Graph) -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="🎟️ Mi Rifa — ¡Elegí tu número!">
+<meta property="og:description" content="Entrá, poné tu nombre y reservá tu número en segundos. El número queda tuyo al instante.">
+<meta property="og:image" content="https://alegalvez-aplicaciones.github.io/Rifas/icon-512.png">
+<meta property="og:url" content="https://alegalvez-aplicaciones.github.io/Rifas/cliente.html">
+<meta name="twitter:card" content="summary">
 <style>
   :root{
     --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
@@ -198,7 +205,9 @@ function renderTablero(nums){
   let html="";
   for(let i=0;i<cantidadActual;i++){
     const k=String(i).padStart(ancho,"0");
-    const est=(nums[k]||{}).estado||"disponible";
+    let est=(nums[k]||{}).estado||"disponible";
+    // El cliente NO ve los bloqueados como tales: los ve como no disponibles (rojo), igual que los vendidos
+    if(est==="bloqueado") est="ocupado";
     html += `<div class="num ${est}" data-n="${k}" data-e="${est}">${k}</div>`;
   }
   const t=$("tablero"); t.innerHTML=html;
