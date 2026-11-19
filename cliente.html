@@ -38,10 +38,11 @@
   .err{color:var(--busy);font-size:13px;margin-top:8px;min-height:16px}
   .spinner{text-align:center;color:var(--muted);padding:40px}
 
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(34px,1fr));gap:5px;margin-top:14px}
+  .grid{display:grid;grid-template-columns:repeat(10,minmax(var(--cell,28px),1fr));
+    gap:4px;margin-top:14px;overflow-x:auto;padding-bottom:4px}
   .num{aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;
-    border-radius:8px;font-weight:700;font-size:13px;border:1px solid var(--line);
-    background:var(--panel2);color:var(--txt);user-select:none;position:relative}
+    border-radius:8px;font-weight:700;font-size:var(--numfs,13px);border:1px solid var(--line);
+    background:var(--panel2);color:var(--txt);user-select:none;position:relative;min-width:0}
   .num.disponible{background:rgba(47,191,113,.12);border-color:rgba(47,191,113,.4);cursor:pointer}
   .num.disponible:hover{background:rgba(47,191,113,.25)}
   .num.ocupado,.num.bloqueado{opacity:.5;text-decoration:line-through;
@@ -168,7 +169,7 @@ const FONDOS = {"frutilla": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/
 
 // Leer el ID de la rifa desde el link (?rifa=XXXX)
 const rifaId = new URLSearchParams(location.search).get("rifa");
-let cantidadActual = 100, estadoActual = "activa";
+let cantidadActual = 100, estadoActual = "activa", inicioActual = 0;
 
 if(!rifaId){ show("noRifa"); }
 else {
@@ -185,6 +186,7 @@ else {
     if(!snap.exists()){ show("noRifa"); return; }
     const r = snap.data();
     cantidadActual = r.cantidad || Object.keys(r.numeros||{}).length || 100;
+    inicioActual = (Number.isFinite(parseInt(r.inicio,10)) && r.inicio>=0) ? parseInt(r.inicio,10) : 0;
     estadoActual = r.estado || "activa";
     $("titulo").textContent = r.titulo || "Rifa";
     const nums = r.numeros||{};
@@ -202,16 +204,20 @@ else {
 }
 
 function renderTablero(nums){
-  const ancho = String(Math.max(0,cantidadActual-1)).length;
+  const ancho = String(Math.max(0, inicioActual + cantidadActual - 1)).length;
+  const t=$("tablero");
+  const cell = ancho<=2 ? "25px" : ancho===3 ? "28px" : "38px";
+  const fs   = ancho<=2 ? "13px" : ancho===3 ? "12px" : "11px";
+  t.style.setProperty("--cell", cell); t.style.setProperty("--numfs", fs);
   let html="";
   for(let i=0;i<cantidadActual;i++){
-    const k=String(i).padStart(ancho,"0");
+    const k=String(inicioActual+i).padStart(ancho,"0");
     let est=(nums[k]||{}).estado||"disponible";
     // El cliente NO ve los bloqueados como tales: los ve como no disponibles (rojo), igual que los vendidos
     if(est==="bloqueado") est="ocupado";
     html += `<div class="num ${est}" data-n="${k}" data-e="${est}">${k}</div>`;
   }
-  const t=$("tablero"); t.innerHTML=html;
+  t.innerHTML=html;
   if(estadoActual==="finalizada") return; // rifa cerrada: tablero de solo lectura
   t.querySelectorAll(".num").forEach(el=>{
     if(el.dataset.e==="disponible") el.onclick=()=> pedirDatos(el.dataset.n);

@@ -48,10 +48,11 @@
   .rifa-item button{padding:8px 12px;font-size:14px}
 
   /* Tablero */
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(34px,1fr));gap:5px;margin-top:12px}
+  .grid{display:grid;grid-template-columns:repeat(10,minmax(var(--cell,28px),1fr));
+    gap:4px;margin-top:12px;overflow-x:auto;padding-bottom:4px}
   .num{aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;
-    border-radius:8px;font-weight:700;font-size:13px;border:1px solid var(--line);
-    background:var(--panel2);color:var(--txt);cursor:pointer;user-select:none;position:relative}
+    border-radius:8px;font-weight:700;font-size:var(--numfs,13px);border:1px solid var(--line);
+    background:var(--panel2);color:var(--txt);cursor:pointer;user-select:none;position:relative;min-width:0}
   .num.ocupado{background:rgba(224,85,78,.15);color:var(--busy);
     text-decoration:line-through;border-color:rgba(224,85,78,.4)}
   .num.bloqueado{background:rgba(185,138,47,.15);color:var(--lock);
@@ -202,6 +203,13 @@
       <input id="nrTitulo" placeholder="Ej: Rifa del asado">
       <label style="margin-top:10px;display:block">¿Cuántos números? (entre 10 y 1000)</label>
       <input id="nrCantidad" type="number" inputmode="numeric" min="10" max="1000" value="100" placeholder="Ej: 100">
+      <label style="margin-top:10px;display:block">¿Desde qué número empiezan?</label>
+      <div class="rul-seg" id="nrInicioSeg" style="margin-top:6px;width:fit-content">
+        <button type="button" data-i="0" class="on">Desde 0</button>
+        <button type="button" data-i="1">Desde 1</button>
+        <button type="button" data-i="otro">Otro</button>
+      </div>
+      <input id="nrInicio" type="number" inputmode="numeric" min="0" value="0" placeholder="Ej: 100" style="margin-top:8px;display:none">
       <label style="margin-top:10px;display:block">Precio por número (opcional)</label>
       <input id="nrPrecio" type="number" inputmode="numeric" placeholder="Ej: 2000">
       <div class="err" id="nrErr"></div>
@@ -478,36 +486,62 @@ function renderRifas(rifas){
     b.onclick = ()=> abrirRifa(b.dataset.id));
 }
 
+// Selector "¿desde qué número empiezan?"
+$("nrInicioSeg").querySelectorAll("button").forEach(b=>{
+  b.onclick = ()=>{
+    $("nrInicioSeg").querySelectorAll("button").forEach(x=> x.classList.toggle("on", x===b));
+    if(b.dataset.i==="otro"){ $("nrInicio").style.display="block"; $("nrInicio").value=""; $("nrInicio").focus(); }
+    else { $("nrInicio").style.display="none"; $("nrInicio").value = b.dataset.i; }
+  };
+});
+
 $("crearBtn").onclick = async () => {
   const titulo = $("nrTitulo").value.trim();
   const cantidad = parseInt($("nrCantidad").value, 10);
   const precio = parseFloat($("nrPrecio").value) || null;
+  let inicio = parseInt($("nrInicio").value, 10);
+  if(!Number.isFinite(inicio) || inicio < 0) inicio = 0;
   $("nrErr").textContent = "";
   if(!titulo){ $("nrErr").textContent = "Ponele un nombre a la rifa."; return; }
   if(!cantidad || cantidad<10 || cantidad>1000){
     $("nrErr").textContent = "La cantidad de números debe estar entre 10 y 1000."; return; }
   $("crearBtn").disabled = true;
   try {
-    const ancho = anchoNum(cantidad);
+    const ancho = String(inicio + cantidad - 1).length;
     const numeros = {};
     for(let i=0;i<cantidad;i++){
-      numeros[claveNum(i,ancho)] = { estado:"disponible", nombre:null, at:null };
+      numeros[claveNum(inicio+i, ancho)] = { estado:"disponible", nombre:null, at:null };
     }
     const ref = doc(collection(db,"rifas"));
     await setDoc(ref, {
-      owner: currentUser.uid, titulo, precio, cantidad, estado:"activa",
+      owner: currentUser.uid, titulo, precio, cantidad, inicio, estado:"activa",
       createdAt: serverTimestamp(), numeros
     });
     await addDoc(collection(db,"rifas",ref.id,"historial"),
       { tipo:"creo", numero:null, nombre:null, at:serverTimestamp() });
     $("nrTitulo").value=""; $("nrPrecio").value=""; $("nrCantidad").value="100";
+    $("nrInicio").value="0"; $("nrInicio").style.display="none";
+    $("nrInicioSeg").querySelectorAll("button").forEach(x=> x.classList.toggle("on", x.dataset.i==="0"));
   } catch(e){ $("nrErr").textContent = "No se pudo crear. ¿Está creada la base Firestore?"; }
   $("crearBtn").disabled = false;
 };
 
-// Ancho de dígitos y clave de cada número según la cantidad total
+// Ancho de dígitos y clave de cada número
 function anchoNum(cant){ return String(Math.max(0,(cant||100)-1)).length; }
 function claveNum(i, ancho){ return String(i).padStart(ancho,"0"); }
+// Número inicial y ancho reales de una rifa (compatibles con rifas viejas sin "inicio")
+function iniRifa(d){ const v = parseInt(d?.inicio,10); return Number.isFinite(v)&&v>=0 ? v : 0; }
+function anchoRifa(d){
+  const cant = d?.cantidad || Object.keys(d?.numeros||{}).length || 100;
+  return String(Math.max(0, iniRifa(d) + cant - 1)).length;
+}
+// Tamaño de celda y fuente de la grilla según la cantidad de dígitos
+function ajustarGrilla(el, ancho){
+  const cell = ancho<=2 ? "25px" : ancho===3 ? "28px" : "38px";
+  const fs   = ancho<=2 ? "13px" : ancho===3 ? "12px" : "11px";
+  el.style.setProperty("--cell", cell);
+  el.style.setProperty("--numfs", fs);
+}
 
 // ---------- DETALLE: tablero + historial ----------
 let rifaActualId = null, rifaActualData = null;
@@ -693,10 +727,12 @@ $("removeFondoBtn").onclick = ()=> guardarTema({ fondo: null, fondoImagen: null 
 function renderTablero(nums){
   const t = $("tablero");
   const cant = rifaActualData?.cantidad || Object.keys(nums).length || 100;
-  const ancho = anchoNum(cant);
+  const inicio = iniRifa(rifaActualData);
+  const ancho = anchoRifa(rifaActualData);
+  ajustarGrilla(t, ancho);
   let html = "";
   for(let i=0;i<cant;i++){
-    const k = claveNum(i,ancho);
+    const k = claveNum(inicio+i,ancho);
     const n = nums[k]||{estado:"disponible"};
     html += `<div class="num ${n.estado}" data-n="${k}">${k}</div>`;
   }
@@ -961,14 +997,15 @@ function rulMaxPremios(){
 function rulConstruirPool(){
   const nums = rifaActualData?.numeros || {};
   const cant = rifaActualData?.cantidad || Object.keys(nums).length || 100;
-  const ancho = anchoNum(cant);
+  const inicio = iniRifa(rifaActualData);
+  const ancho = anchoRifa(rifaActualData);
   const ganados = new Set(rulGanadores.map(g=>g.num));
   let claves;
   if(rulModo==="vendidos"){
     claves = Object.keys(nums).filter(k=> nums[k].estado==="ocupado");
   } else {
     claves = [];
-    for(let i=0;i<cant;i++) claves.push(claveNum(i,ancho));
+    for(let i=0;i<cant;i++) claves.push(claveNum(inicio+i,ancho));
   }
   rulPool = claves.filter(k=> !ganados.has(k)).sort((a,b)=>a.localeCompare(b));
 }
