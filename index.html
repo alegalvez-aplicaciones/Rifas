@@ -108,6 +108,53 @@
   .modal h3{margin:0 0 4px;font-size:18px}
   .modal .actions{display:flex;flex-direction:column;gap:8px;margin-top:16px}
   .spinner{text-align:center;color:var(--muted);padding:30px}
+
+  /* ===== Ruleta de sorteo ===== */
+  .rul-bg{position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:60;
+    display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;
+    padding:16px;padding-top:max(16px,env(safe-area-inset-top));
+    padding-bottom:max(16px,env(safe-area-inset-bottom))}
+  .rul{background:var(--panel);border:1px solid var(--line);border-radius:18px;
+    width:100%;max-width:640px;padding:18px}
+  .rul-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+  .rul-head h2{margin:0;font-size:20px;line-height:1.2}
+  .rul-fecha{color:var(--muted);font-size:13px;margin-top:3px}
+  .rul-close{background:transparent;border:none;color:var(--muted);font-size:22px;
+    line-height:1;padding:2px 6px;cursor:pointer;font-weight:400}
+  .rul-ctrls{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:14px}
+  .rul-seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .rul-seg button{background:var(--panel2);color:var(--muted);border:none;padding:9px 13px;
+    font-weight:600;font-size:13px;cursor:pointer}
+  .rul-seg button.on{background:var(--accent);color:#fff}
+  .rul-prem-btn{background:var(--panel2);color:var(--txt);border:1px solid var(--line);
+    border-radius:10px;padding:9px 14px;font-weight:600;font-size:13px;cursor:pointer}
+  .rul-body{display:flex;gap:18px;flex-wrap:wrap;margin-top:16px;align-items:flex-start}
+  .rul-main{flex:1 1 280px;min-width:260px;display:flex;flex-direction:column;align-items:center}
+  .rul-side{flex:1 1 210px;min-width:195px}
+  .wheel-wrap{position:relative;width:260px;height:260px;max-width:76vw;max-height:76vw}
+  .wheel-pointer{position:absolute;top:-2px;left:50%;transform:translateX(-50%);z-index:3;
+    width:0;height:0;border-left:15px solid transparent;border-right:15px solid transparent;
+    border-top:26px solid var(--accent);filter:drop-shadow(0 2px 2px rgba(0,0,0,.45))}
+  .wheel{width:100%;height:100%;border-radius:50%;position:relative;
+    border:8px solid var(--panel2);box-shadow:0 0 0 3px var(--line),0 10px 30px rgba(0,0,0,.45);
+    transition:transform 4.6s cubic-bezier(.17,.67,.14,1);background:var(--panel2)}
+  .wheel-hub{position:absolute;inset:25%;border-radius:50%;background:var(--panel);
+    border:4px solid var(--line);z-index:2;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;text-align:center;padding:4px}
+  .wheel-hub .big{font-size:40px;font-weight:800;color:var(--txt);line-height:1}
+  .wheel-hub .lbl{font-size:10px;color:var(--muted);margin-top:4px;text-transform:uppercase;
+    letter-spacing:.5px;max-width:92%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .spin-btn{margin-top:16px;width:100%;max-width:260px}
+  .rul-msg{text-align:center;color:var(--busy);font-size:13px;min-height:14px;margin-top:8px}
+  .rul-side h3{margin:0 0 8px;font-size:15px}
+  .gan{display:flex;align-items:center;gap:9px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:10px;padding:8px 10px;margin-bottom:6px;animation:ganIn .4s ease}
+  .gan .pos{background:var(--accent);color:#fff;font-weight:800;font-size:12px;
+    min-width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center}
+  .gan .num{font-weight:800;font-size:17px}
+  .gan .nom{flex:1;font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  @keyframes ganIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+  .rul-empty{color:var(--muted);font-size:13px}
 </style>
 </head>
 <body>
@@ -179,6 +226,7 @@
       </div>
       <button class="block" id="shareBtn" style="margin-top:12px;background:#25D366">🔗 Compartir link con clientes</button>
       <button class="block ghost" id="resumenBtn" style="margin-top:8px">📋 Resumen de vendidos</button>
+      <button class="block ghost" id="ruletaBtn" style="margin-top:8px">🎰 Ruleta / Sortear ganadores</button>
       <div class="grid" id="tablero"></div>
       <div class="legend">
         <span><i class="dot" style="background:var(--ok)"></i>Disponible</span>
@@ -863,6 +911,282 @@ window._copiarResumen = async () => {
 
 function escapeHtml(s){ return String(s??"").replace(/[&<>"']/g,
   m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+// ================= RULETA DE SORTEO =================
+let rulModo = "vendidos";     // "vendidos" | "todos"
+let rulPremios = 1;           // cuántos premios/tiros
+let rulGanadores = [];        // [{num, nombre}]
+let rulPool = [];             // claves disponibles para el próximo tiro
+let rulGirando = false;
+let rulShuffle = null;
+let rulAngle = 0;
+
+$("ruletaBtn").onclick = abrirRuleta;
+
+// Número aleatorio justo (0..n-1) usando crypto
+function randInt(n){
+  if(n<=0) return 0;
+  const buf = new Uint32Array(1);
+  (window.crypto||window.msCrypto).getRandomValues(buf);
+  return buf[0] % n;
+}
+
+function rulFechaTexto(){
+  return new Date().toLocaleString("es-AR",
+    { weekday:"long", day:"2-digit", month:"long", year:"numeric", hour:"2-digit", minute:"2-digit" });
+}
+
+function rulMaxPremios(){
+  const nums = rifaActualData?.numeros || {};
+  const base = (rulModo==="vendidos")
+    ? Object.values(nums).filter(n=>n.estado==="ocupado").length
+    : (rifaActualData?.cantidad || Object.keys(nums).length || 100);
+  return Math.max(1, base);
+}
+
+function rulConstruirPool(){
+  const nums = rifaActualData?.numeros || {};
+  const cant = rifaActualData?.cantidad || Object.keys(nums).length || 100;
+  const ancho = anchoNum(cant);
+  const ganados = new Set(rulGanadores.map(g=>g.num));
+  let claves;
+  if(rulModo==="vendidos"){
+    claves = Object.keys(nums).filter(k=> nums[k].estado==="ocupado");
+  } else {
+    claves = [];
+    for(let i=0;i<cant;i++) claves.push(claveNum(i,ancho));
+  }
+  rulPool = claves.filter(k=> !ganados.has(k)).sort((a,b)=>a.localeCompare(b));
+}
+
+function abrirRuleta(){
+  if(!rifaActualData) return;
+  rulModo = "vendidos"; rulPremios = 1; rulGanadores = []; rulGirando = false; rulAngle = 0;
+  rulConstruirPool();
+  const ov = document.createElement("div");
+  ov.className = "rul-bg"; ov.id = "ruletaOv";
+  ov.innerHTML = rulHtml();
+  document.body.appendChild(ov);
+  ov.onclick = e=>{ if(e.target===ov && !rulGirando) cerrarRuleta(); };
+  rulWire();
+  rulRender();
+}
+window._cerrarRuleta = cerrarRuleta;
+function cerrarRuleta(){
+  if(rulShuffle){ clearInterval(rulShuffle); rulShuffle=null; }
+  const ov = $("ruletaOv"); if(ov) ov.remove();
+}
+
+function rulHtml(){
+  const tit = escapeHtml(rifaActualData?.titulo || "Rifa");
+  return `<div class="rul">
+    <div class="rul-head">
+      <div>
+        <h2>🎰 ${tit}</h2>
+        <div class="rul-fecha">Sorteo del ${rulFechaTexto()}</div>
+      </div>
+      <button class="rul-close" onclick="_cerrarRuleta()" aria-label="Cerrar">✕</button>
+    </div>
+    <div class="rul-ctrls">
+      <div class="rul-seg" id="rulSeg">
+        <button data-m="vendidos" class="on">Entre vendidos</button>
+        <button data-m="todos">Entre todos</button>
+      </div>
+      <div id="rulPremWrap"></div>
+    </div>
+    <div class="rul-body">
+      <div class="rul-main">
+        <div class="wheel-wrap">
+          <div class="wheel-pointer"></div>
+          <div class="wheel" id="rulWheel"></div>
+          <div class="wheel-hub">
+            <div class="big" id="rulBig">--</div>
+            <div class="lbl" id="rulLbl">girá la ruleta</div>
+          </div>
+        </div>
+        <button class="block spin-btn" id="rulSpin">🎲 Girar</button>
+        <div class="rul-msg" id="rulMsg"></div>
+      </div>
+      <div class="rul-side">
+        <h3>🏆 Ganadores</h3>
+        <div id="rulLista"></div>
+        <div id="rulAcciones"></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function rulWire(){
+  $("rulSeg").querySelectorAll("button").forEach(b=>{
+    b.onclick = ()=>{
+      if(rulGirando || b.dataset.m===rulModo) return;
+      rulModo = b.dataset.m;
+      rulGanadores = [];                 // cambiar criterio reinicia el sorteo
+      rulPremios = Math.min(rulPremios, rulMaxPremios());
+      setHub("--","girá la ruleta");
+      rulConstruirPool(); rulRender();
+    };
+  });
+  $("rulSpin").onclick = rulGirar;
+  pintarRueda();
+}
+
+function pintarRueda(){
+  const w = $("rulWheel"); if(!w) return;
+  const cols = ["#4f8cff","#ff7a59","#3fbf71","#a06bff","#e0a800","#2bb3e0","#e05a8a","#b98a3f"];
+  const seg = 18, stops = [];
+  for(let i=0;i<seg;i++){
+    const c = cols[i%cols.length], a1=(360/seg)*i, a2=(360/seg)*(i+1);
+    stops.push(`${c} ${a1}deg ${a2}deg`);
+  }
+  w.style.background = `conic-gradient(${stops.join(",")})`;
+}
+
+function setBig(num){
+  const big = $("rulBig"); if(!big) return;
+  big.textContent = num;
+  const L = String(num).length;
+  big.style.fontSize = L>=4 ? "26px" : L===3 ? "34px" : "40px";
+}
+function setHub(num, lbl){ setBig(num); if($("rulLbl")) $("rulLbl").textContent = lbl; }
+
+function rulRender(){
+  // botón "cuántos premios"
+  const pw = $("rulPremWrap");
+  if(pw){
+    pw.innerHTML = `<button class="rul-prem-btn" id="rulPremBtn">🎯 Premios: ${rulPremios}</button>`;
+    $("rulPremBtn").onclick = rulPedirPremios;
+  }
+  // segmento activo
+  $("rulSeg")?.querySelectorAll("button").forEach(x=> x.classList.toggle("on", x.dataset.m===rulModo));
+  // lista + acciones
+  rulRenderLista();
+  // botón girar + mensaje
+  const completo = rulGanadores.length >= rulPremios;
+  const sinPool  = rulPool.length === 0;
+  const spin = $("rulSpin");
+  if(spin){
+    spin.disabled = rulGirando || completo || sinPool;
+    spin.textContent = rulGirando ? "Girando…"
+      : completo ? "✅ Sorteo completo"
+      : `🎲 Girar (premio ${rulGanadores.length+1} de ${rulPremios})`;
+  }
+  const msg = $("rulMsg");
+  if(msg){
+    if(rulModo==="vendidos" && sinPool && !rulGanadores.length)
+      msg.textContent = "No hay números vendidos para sortear.";
+    else if(sinPool && !completo)
+      msg.textContent = "No quedan números para seguir sorteando.";
+    else msg.textContent = "";
+  }
+}
+
+function rulRenderLista(){
+  const c = $("rulLista");
+  if(c){
+    c.innerHTML = rulGanadores.length
+      ? rulGanadores.map((g,i)=>`<div class="gan">
+          <span class="pos">${i+1}°</span>
+          <span class="num">N° ${g.num}</span>
+          <span class="nom">${g.nombre ? escapeHtml(g.nombre) : "—"}</span>
+        </div>`).join("")
+      : `<p class="rul-empty">Todavía no sorteaste ningún premio.</p>`;
+  }
+  const a = $("rulAcciones");
+  if(a){
+    if(rulGanadores.length){
+      a.innerHTML = `
+        <button class="block" id="rulShare" style="background:#25D366;margin-top:8px">💬 Compartir resultado</button>
+        <button class="ghost block" id="rulCopy" style="margin-top:6px">📋 Copiar</button>
+        <button class="ghost block" id="rulReset" style="margin-top:6px">🔄 Reiniciar sorteo</button>`;
+      $("rulShare").onclick = rulCompartir;
+      $("rulCopy").onclick  = rulCopiar;
+      $("rulReset").onclick = ()=>{ if(rulGirando) return;
+        rulGanadores=[]; rulConstruirPool(); setHub("--","girá la ruleta"); rulRender(); };
+    } else a.innerHTML = "";
+  }
+}
+
+function rulPedirPremios(){
+  if(rulGirando) return;
+  const max = rulMaxPremios();
+  const pw = $("rulPremWrap"); if(!pw) return;
+  pw.innerHTML = `<span style="display:inline-flex;gap:6px;align-items:center">
+      <input id="rulPremInput" type="number" inputmode="numeric" min="1" max="${max}" value="${rulPremios}"
+        style="width:68px;padding:8px;text-align:center;margin:0">
+      <button class="rul-prem-btn" id="rulPremOk">Aceptar</button>
+    </span>`;
+  const inp = $("rulPremInput"); inp.focus(); inp.select();
+  const ok = ()=>{
+    let v = parseInt(inp.value,10); if(!v||v<1) v=1; if(v>max) v=max;
+    rulPremios = v; rulRender();
+  };
+  $("rulPremOk").onclick = ok;
+  inp.onkeydown = e=>{ if(e.key==="Enter"){ e.preventDefault(); ok(); } };
+}
+
+function rulGirar(){
+  if(rulGirando) return;
+  rulConstruirPool();
+  if(!rulPool.length || rulGanadores.length>=rulPremios){ rulRender(); return; }
+  rulGirando = true; rulRender();
+
+  // ganador elegido de forma justa
+  const ganKey = rulPool[randInt(rulPool.length)];
+  const nums = rifaActualData?.numeros || {};
+  const nombre = (nums[ganKey]?.estado==="ocupado") ? (nums[ganKey].nombre||null) : null;
+
+  // giro de la rueda
+  const wheel = $("rulWheel");
+  rulAngle += (5 + Math.floor(Math.random()*4))*360 + Math.random()*360;
+  if(wheel) wheel.style.transform = `rotate(${rulAngle}deg)`;
+
+  // el número del centro "rueda" rápido
+  if($("rulLbl")) $("rulLbl").textContent = "sorteando…";
+  if(rulShuffle) clearInterval(rulShuffle);
+  rulShuffle = setInterval(()=> setBig(rulPool[randInt(rulPool.length)]), 70);
+
+  setTimeout(()=>{
+    clearInterval(rulShuffle); rulShuffle=null;
+    setHub(ganKey, nombre || "¡ganador!");
+    rulGanadores.push({ num:ganKey, nombre });
+    rulConstruirPool();
+    rulGirando = false;
+    try{ beep(); }catch(e){}
+    rulConfetti();
+    rulRender();
+  }, 4700);
+}
+
+function rulConfetti(){
+  const wrap = document.querySelector("#ruletaOv .wheel-wrap");
+  if(!wrap) return;
+  const emos = ["🎉","✨","🎊","⭐"];
+  for(let i=0;i<14;i++){
+    const s = document.createElement("span");
+    s.textContent = emos[i%emos.length];
+    s.style.cssText = `position:absolute;left:50%;top:42%;font-size:${14+Math.random()*12}px;`
+      + `pointer-events:none;z-index:5;transition:transform 1s ease,opacity 1s ease;opacity:1`;
+    wrap.appendChild(s);
+    const dx=(Math.random()*2-1)*160, dy=(Math.random()*-1-0.2)*170;
+    requestAnimationFrame(()=>{ s.style.transform=`translate(${dx}px,${dy}px) rotate(${Math.random()*360}deg)`; s.style.opacity="0"; });
+    setTimeout(()=> s.remove(), 1100);
+  }
+}
+
+function rulTexto(){
+  const tit = rifaActualData?.titulo || "Rifa";
+  const lineas = rulGanadores.map((g,i)=>
+    `${i+1}° premio: N° ${g.num}${g.nombre ? " — "+g.nombre : ""}`);
+  return `🎰 ${tit}\n🗓️ Sorteo del ${rulFechaTexto()}\n\n🏆 Ganadores:\n` + lineas.join("\n");
+}
+function rulCompartir(){
+  window.open("https://wa.me/?text="+encodeURIComponent(rulTexto()), "_blank", "noopener");
+}
+async function rulCopiar(){
+  try{ await navigator.clipboard.writeText(rulTexto()); }catch(e){}
+  const b = $("rulCopy"); if(b){ b.textContent="✅ ¡Copiado!"; setTimeout(()=> b.textContent="📋 Copiar", 1700); }
+}
 </script>
 <script>
   // Registra el service worker (necesario para instalar como app / Play Store)
