@@ -350,6 +350,19 @@ function modal(html){
 function closeModal(){ $("modal").classList.add("hide"); $("modal").innerHTML=""; }
 window._closeModal = closeModal;
 
+// ---------- Aviso de novedad (se muestra una sola vez por dispositivo) ----------
+function mostrarNovedad(){
+  const KEY = "novedad_ruleta_v1";
+  try { if(localStorage.getItem(KEY)) return; localStorage.setItem(KEY,"1"); } catch(e){}
+  modal(`<h3>🎉 ¡Novedad!</h3>
+    <p class="muted">Ahora podés <strong>sortear los ganadores con una ruleta</strong> 🎰.<br><br>
+      Entrá a cualquier rifa y tocá <strong>“🎰 Ruleta / Sortear ganadores”</strong>:
+      elegís cuántos premios querés y la ruleta hace el sorteo, mostrando los ganadores en orden.</p>
+    <div class="actions">
+      <button onclick="_closeModal()">¡Buenísimo!</button>
+    </div>`);
+}
+
 // ---------- AUTH: alternar login/registro ----------
 let modoRegistro = false;
 $("switchLink").onclick = e => {
@@ -430,6 +443,7 @@ function irDash(user){
   currentUser = user;
   show("dash");
   aplicarTemaVendor("oscuro");
+  mostrarNovedad();
   const q = query(collection(db,"rifas"), where("owner","==",user.uid));
   unsubRifas = onSnapshot(q, snap => {
     const rifas = [];
